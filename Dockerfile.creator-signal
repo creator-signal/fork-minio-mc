@@ -23,7 +23,12 @@ RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build \
     -ldflags="-s -w -X github.com/minio/mc/cmd.Version=${VERSION} -X github.com/minio/mc/cmd.ReleaseTag=${RELEASE_TAG} -X github.com/minio/mc/cmd.CommitID=${COMMIT_ID} -X github.com/minio/mc/cmd.ShortCommitID=${SHORT_COMMIT_ID} -X github.com/minio/mc/cmd.CopyrightYear=${COPYRIGHT_YEAR}" \
     -o /out/mc .
 
-FROM scratch
+# The Sales Pulse Local acceptance harness runs bucket, policy and encryption
+# initialization through `sh -euc` wrapper scripts, so the runtime image must
+# provide a POSIX shell alongside the static `mc` client. Alpine's busybox
+# supplies /bin/sh without a package manager; the CA bundle is copied from the
+# build stage so the runtime needs neither apk nor extra packages.
+FROM alpine:3.22
 
 COPY --from=build /out/mc /usr/bin/mc
 COPY --from=build /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
