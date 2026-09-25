@@ -1,0 +1,108 @@
+name: Creator Signal OCI release
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: Immutable release tag in the form cs-YYYYMMDD-12charsha
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  packages: write
+  id-token: write
+  attestations: write
+  security-events: write
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: creator-signal/mc
+
+jobs:
+  publish:
+    if: github.ref == 'refs/heads/creator-signal/master'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Verify release identity and source lineage
+        id: release
+        env:
+          RELEASE_TAG: ${{ inputs.release_tag }}
+        run: |
+          set -euo pipefail
+          expected_short_sha="$(git rev-parse --short=12 HEAD)"
+          if ! [[ "$RELEASE_TAG" =~ ^cs-[0-9]{8}-${expected_short_sha}$ ]]; then
+            echo "release_tag must be cs-YYYYMMDD-${expected_short_sha} for this exact commit" >&2
+            exit 1
+          fi
+          git fetch --no-tags origin creator-signal/master
+          git merge-base --is-ancestor "$GITHUB_SHA" origin/creator-signal/master
+          echo "version=$(git show -s --format=%cI HEAD | sed 's/+00:00/Z/')" >> "$GITHUB_OUTPUT"
+          echo "short_sha=$expected_short_sha" >> "$GITHUB_OUTPUT"
+          echo "year=$(git show -s --format=%cd --date=format:%Y HEAD)" >> "$GITHUB_OUTPUT"
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Build and publish immutable multi-platform image
+        id: build
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile.creator-signal
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: |
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ inputs.release_tag }}
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:sha-${{ github.sha }}
+          build-args: |
+            VERSION=${{ steps.release.outputs.version }}
+            RELEASE_TAG=${{ inputs.release_tag }}
+            COMMIT_ID=${{ github.sha }}
+            SHORT_COMMIT_ID=${{ steps.release.outputs.short_sha }}
+            COPYRIGHT_YEAR=${{ steps.release.outputs.year }}
+          labels: |
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.version=${{ inputs.release_tag }}
+          sbom: true
+          provenance: mode=max
+      - name: Attest the published image
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-name: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          subject-digest: ${{ steps.build.outputs.digest }}
+          push-to-registry: true
+      - name: Smoke-test the published image by digest
+        run: docker run --rm ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ steps.build.outputs.digest }} --version
+      - name: Scan published image
+        uses: anchore/scan-action@v6
+        with:
+          image: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ steps.build.outputs.digest }}
+          fail-build: true
+          severity-cutoff: high
+      - name: Upload scan result
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: results.sarif
+      - name: Publish release summary
+        env:
+          DIGEST: ${{ steps.build.outputs.digest }}
+          RELEASE_TAG: ${{ inputs.release_tag }}
+        run: |
+          {
+            echo '## Creator Signal MinIO Client candidate'
+            echo
+            echo "- Image: \`${REGISTRY}/${IMAGE_NAME}@${DIGEST}\`"
+            echo "- Immutable tag: \`${RELEASE_TAG}\`"
+            echo "- Source commit: \`${GITHUB_SHA}\`"
+            echo '- SBOM, provenance attestation and scan are attached to this published candidate.'
+            echo '- This workflow does not deploy or promote the image.'
+          } >> "$GITHUB_STEP_SUMMARY"

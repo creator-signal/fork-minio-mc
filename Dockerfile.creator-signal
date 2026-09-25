@@ -1,0 +1,34 @@
+# syntax=docker/dockerfile:1
+# Creator Signal release image. It builds the checked-out source rather than
+# downloading an unpinned upstream binary.
+FROM --platform=$BUILDPLATFORM golang:1.24.9-alpine3.22 AS build
+
+ARG TARGETOS
+ARG TARGETARCH
+ARG VERSION
+ARG RELEASE_TAG
+ARG COMMIT_ID
+ARG SHORT_COMMIT_ID
+ARG COPYRIGHT_YEAR
+
+WORKDIR /src
+
+COPY go.mod go.sum ./
+RUN go mod download
+
+COPY . ./
+RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build \
+    -trimpath \
+    -tags=kqueue \
+    -ldflags="-s -w -X github.com/minio/mc/cmd.Version=${VERSION} -X github.com/minio/mc/cmd.ReleaseTag=${RELEASE_TAG} -X github.com/minio/mc/cmd.CommitID=${COMMIT_ID} -X github.com/minio/mc/cmd.ShortCommitID=${SHORT_COMMIT_ID} -X github.com/minio/mc/cmd.CopyrightYear=${COPYRIGHT_YEAR}" \
+    -o /out/mc .
+
+FROM scratch
+
+COPY --from=build /out/mc /usr/bin/mc
+COPY --from=build /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
+COPY CREDITS /licenses/CREDITS
+COPY LICENSE /licenses/LICENSE
+COPY NOTICE /licenses/NOTICE
+
+ENTRYPOINT ["/usr/bin/mc"]
