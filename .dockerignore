@@ -1,0 +1,6 @@
+.git
+.github
+mc
+release
+build
+*.test
