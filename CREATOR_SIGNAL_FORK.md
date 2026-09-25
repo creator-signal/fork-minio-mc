@@ -31,9 +31,12 @@ resolution and release-impact assessment in the PR.
 
 ## OCI releases
 
-The `Creator Signal OCI release` workflow is manual and can run only from
-`creator-signal/master`. Its release tag must be exactly
-`cs-YYYYMMDD-<12-character-current-commit-sha>`.
+The `Creator Signal OCI release` workflow runs only when an immutable Git tag
+named `creator-signal-mc-vYYYYMMDD-<12-character-current-commit-sha>` is pushed.
+It verifies that the tagged commit is an ancestor of `creator-signal/master` and
+derives the matching OCI image tag
+`cs-YYYYMMDD-<12-character-current-commit-sha>`. The Git tag is the explicit
+release authorization; do not retag, move, or reuse it.
 
 The workflow builds `Dockerfile.creator-signal` from the checked-out source;
 it does not download an upstream `latest` binary. It publishes only immutable
