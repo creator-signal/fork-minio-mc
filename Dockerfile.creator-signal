@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1
 # Creator Signal release image. It builds the checked-out source rather than
 # downloading an unpinned upstream binary.
-FROM --platform=$BUILDPLATFORM golang:1.24.9-alpine3.22 AS build
+FROM --platform=$BUILDPLATFORM golang:1.26.6-alpine3.22 AS build
 
 ARG TARGETOS
 ARG TARGETARCH
