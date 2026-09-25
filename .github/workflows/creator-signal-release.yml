@@ -81,16 +81,18 @@ jobs:
       - name: Smoke-test the published image by digest
         run: docker run --rm ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ steps.build.outputs.digest }} --version
       - name: Scan published image
+        id: scan
         uses: anchore/scan-action@v6
         with:
           image: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ steps.build.outputs.digest }}
+          output-file: ${{ github.workspace }}/grype-results.sarif
           fail-build: true
           severity-cutoff: high
       - name: Upload scan result
-        uses: github/codeql-action/upload-sarif@v3
+        uses: github/codeql-action/upload-sarif@v4
         if: always()
         with:
-          sarif_file: results.sarif
+          sarif_file: grype-results.sarif
       - name: Publish release summary
         env:
           DIGEST: ${{ steps.build.outputs.digest }}
